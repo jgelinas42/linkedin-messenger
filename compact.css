@@ -1,0 +1,12 @@
+/* Masque ce qui n'est pas la messagerie. Lu au démarrage : si LinkedIn change ses classes,
+   corriger ici puis relancer l'app (pas de recompilation). Supprimer une ligne = la rétablir. */
+#global-nav, .global-nav, .global-nav__a11y-menu { display: none !important; }
+#msg-overlay, .msg-overlay-container { display: none !important; }
+.scaffold-layout__aside { display: none !important; }
+
+/* La messagerie remplit la fenêtre : plus d'espace réservé à la barre du haut, plus de marges,
+   une seule barre de défilement (celle de la liste). */
+body { overflow: hidden !important; }
+.authentication-outlet { padding-top: 0 !important; }
+#messaging, #messaging .scaffold-layout__inner, #messaging .scaffold-layout__content { margin: 0 !important; max-width: none !important; }
+main.msg__list-detail { margin: 0 !important; height: 100vh !important; }
