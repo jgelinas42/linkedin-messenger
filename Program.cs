@@ -15,7 +15,13 @@ static class Program
         if (!first) { showSignal.Set(); return; } // 2e lancement : réveille l'instance existante
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm(showSignal, startHidden: args.Contains("--tray")));
+        var form = new MainForm(showSignal, startHidden: args.Contains("--tray"), retried: args.Contains("--retry"));
+        Application.Run(form);
+        if (!form.RestartRequested) return;
+
+        mutex.ReleaseMutex();
+        try { Process.GetProcessById(form.BrowserPid).WaitForExit(10000); } catch (ArgumentException) { } // déjà terminé
+        Process.Start(Environment.ProcessPath, string.Join(" ", args.Append("--retry")));
     }
 }
 
@@ -32,13 +38,17 @@ class MainForm : Form
 
     readonly WebView2 web = new() { Dock = DockStyle.Fill };
     readonly NotifyIcon tray = new() { Icon = new Icon(IconFile, SystemInformation.SmallIconSize), Text = AppName, Visible = true };
+    readonly bool retried;
     bool quitting;
     int unread;
+    public bool RestartRequested { get; private set; }
+    public int BrowserPid { get; private set; }
     CoreWebView2Notification pendingClick; // notification Web liée à la dernière bulle affichée
     DateTime lastWebNotif;
 
-    public MainForm(EventWaitHandle showSignal, bool startHidden)
+    public MainForm(EventWaitHandle showSignal, bool startHidden, bool retried)
     {
+        this.retried = retried;
         Text = AppName;
         Icon = new Icon(IconFile);
         Size = new Size(900, 650);
@@ -75,6 +85,8 @@ class MainForm : Form
             "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"));
         await web.EnsureCoreWebView2Async(env);
         var core = web.CoreWebView2;
+        BrowserPid = (int)core.BrowserProcessId;
+        core.NavigationCompleted += CheckProfileLoaded;
 
         var css = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "compact.css"));
         await core.AddScriptToExecuteOnDocumentCreatedAsync(
@@ -114,6 +126,21 @@ class MainForm : Form
             else if (!InApp(e.Uri)) { e.Cancel = true; OpenExternal(e.Uri); }
         };
         core.Navigate(Home);
+    }
+
+    // Déjà vu après un redémarrage de Windows : WebView2 démarre sans ouvrir son profil (cookies en mémoire).
+    // LinkedIn semble alors déconnecté et toute nouvelle connexion serait perdue. Signe : le fichier Cookies
+    // n'est pas verrouillé par WebView2 après le premier chargement. On relance une seule fois.
+    // Cause reproduite : un autre processus tient Cookies au démarrage de WebView2 (antivirus, indexation…).
+    async void CheckProfileLoaded(object sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        web.CoreWebView2.NavigationCompleted -= CheckProfileLoaded;
+        await Task.Delay(15000); // laisse le temps à l'autre processus de relâcher le fichier
+        try { File.Open(Path.Combine(DataDir, @"EBWebView\Default\Network\Cookies"), FileMode.Open, FileAccess.Read, FileShare.None).Dispose(); }
+        catch (IOException) { return; } // verrouillé (profil chargé) ou absent (premier lancement)
+        if (retried) return; // ponytail: une seule relance ; si ça persiste, la cause est ailleurs
+        RestartRequested = quitting = true;
+        Close();
     }
 
     void Notify(string title, string body, CoreWebView2Notification source)

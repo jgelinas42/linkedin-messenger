@@ -52,3 +52,4 @@ Exécutable : `bin\Release\net8.0-windows\LinkedInMessenger.exe`. Profil (cookie
 
 - Aucune API : tout dépend de l'interface Web de LinkedIn.
 - Raccourcis clavier non faits : WebView2 intercepte le clavier.
+- Si un autre processus verrouille `Cookies` au démarrage (vu après un redémarrage de Windows), WebView2 garde ses cookies en mémoire : LinkedIn paraît déconnecté. L'app le détecte 15 s après le premier chargement et se relance une fois (`--retry`).
